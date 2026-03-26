@@ -61,6 +61,48 @@ ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx265 -tune zerolatency \
     -c:a copy -rtsp_transport tcp -f rtsp rtsp://<server:port/rtp/STREAM_ID
 ```
 
+## 架构设计
+
+### 当前架构（单路视频）
+
+```
+ZLMediaKit (RTSP)
+    ↓
+GStreamer Pipeline (rtspsrc → depay → parse → decode → videoconvert → appsink)
+    ↓ (CPU内存拷贝)
+egui Texture
+    ↓
+GPU 显示
+```
+
+**瓶颈**: 存在 CPU-GPU 内存拷贝，多路视频时会卡顿。
+
+---
+
+### 方案 C：多路视频零拷贝架构（开发中）
+
+```
+ZLMediaKit (6路 RTSP)
+    ↓
+6个独立 GStreamer Pipeline
+    ↓ (glupload → glcolorscale)
+6个 OpenGL 纹理
+    ↓ (零拷贝)
+egui (直接引用纹理)
+    ↓
+GPU 显示
+```
+
+**优势**:
+- ✅ 零拷贝，GPU 直接渲染
+- ✅ 支持 6+ 路视频同时显示
+- ✅ 低延迟，适合驾驶舱场景
+
+**技术细节**:
+- 使用 `glupload` element 把视频帧上传到 OpenGL
+- 使用 `gst_gl_context` 共享 OpenGL 上下文
+- egui 直接使用 GStreamer 的纹理 ID
+
 ## 分支说明
 
 - `master` - 单路视频稳定版本

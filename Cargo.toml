@@ -1,0 +1,16 @@
+[package]
+name = "remote-drive-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+gstreamer = { version = "0.23", features = ["v1_24"] }
+gstreamer-app = { version = "0.23", features = ["v1_24"] }
+gstreamer-video = { version = "0.23", features = ["v1_24"] }
+anyhow = "1.0"
+thiserror = "2.0"
+async-channel = "2.0"
+futures = "0.3"
+bytemuck = { version = "1.16", features = ["derive"] }

@@ -5,6 +5,7 @@ use egui::ColorImage;
 use gstreamer::prelude::*;
 use gstreamer::StateChangeError;
 use gstreamer_app::AppSink;
+use gstreamer_gl as gst_gl;
 
 const NUM_VIDEOS: usize = 6;
 
@@ -205,11 +206,18 @@ struct RemoteDriveApp {
     gps_lat: f64,
     gps_lon: f64,
     global_connected: bool,
+    // Zero-copy OpenGL fields (work in progress)
+    gl_context: Option<Arc<eframe::glow::Context>>,
+    gst_gl_display: Option<gst_gl::GLDisplay>,
+    gst_gl_context: Option<gst_gl::GLContext>,
 }
 
 impl RemoteDriveApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
         gstreamer::init().expect("Failed to initialize GStreamer");
+
+        // Get OpenGL context from eframe (for zero-copy, work in progress)
+        let gl_context = cc.gl.clone();
 
         let default_urls = [
             "rtsp://121.204.173.162:30554/rtp/TESTRTSP_1".to_string(),
@@ -237,6 +245,9 @@ impl RemoteDriveApp {
             gps_lat: 39.9042,
             gps_lon: 116.4074,
             global_connected: false,
+            gl_context,
+            gst_gl_display: None,
+            gst_gl_context: None,
         }
     }
 

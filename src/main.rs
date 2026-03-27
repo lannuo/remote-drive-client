@@ -5,6 +5,7 @@ use egui::ColorImage;
 use gstreamer::prelude::*;
 use gstreamer::StateChangeError;
 use gstreamer_app::AppSink;
+use gstreamer_gl as gst_gl;
 
 const NUM_VIDEOS: usize = 6;
 

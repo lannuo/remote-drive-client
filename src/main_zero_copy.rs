@@ -5,6 +5,7 @@ use egui::ColorImage;
 use gstreamer::prelude::*;
 use gstreamer::StateChangeError;
 use gstreamer_app::AppSink;
+use gstreamer_gl as gst_gl;
 
 const NUM_VIDEOS: usize = 6;
 
@@ -205,11 +206,15 @@ struct RemoteDriveApp {
     gps_lat: f64,
     gps_lon: f64,
     global_connected: bool,
+    // TODO: Add OpenGL context and GStreamer GL context
 }
 
 impl RemoteDriveApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         gstreamer::init().expect("Failed to initialize GStreamer");
+
+        // TODO: Get OpenGL context from cc.gl
+        // TODO: Create GStreamer GLDisplay and GLContext
 
         let default_urls = [
             "rtsp://121.204.173.162:30554/rtp/TESTRTSP_1".to_string(),
@@ -265,6 +270,9 @@ impl Drop for RemoteDriveApp {
 
 impl eframe::App for RemoteDriveApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // TODO: Use _frame.gl() to get OpenGL context
+        // TODO: Use _frame.register_native_glow_texture() to register textures
+
         for i in 0..NUM_VIDEOS {
             let frame = {
                 let mut latest = self.pipelines[i].latest_frame.lock().unwrap();

@@ -9,6 +9,8 @@ egui = "0.29"
 gstreamer = { version = "0.23", features = ["v1_24"] }
 gstreamer-app = { version = "0.23", features = ["v1_24"] }
 gstreamer-video = { version = "0.23", features = ["v1_24"] }
+gstreamer-gl = { version = "0.23", features = ["v1_24"] }
+gstreamer-gl-egl = { version = "0.23", features = ["v1_24"] }
 anyhow = "1.0"
 thiserror = "2.0"
 async-channel = "2.0"

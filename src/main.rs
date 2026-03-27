@@ -6,6 +6,8 @@ use gstreamer::prelude::*;
 use gstreamer::StateChangeError;
 use gstreamer_app::AppSink;
 
+const NUM_VIDEOS: usize = 6;
+
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("GStreamer error: {0}")]
@@ -29,36 +31,22 @@ struct VideoFrame {
     height: u32,
 }
 
-struct RemoteDriveApp {
+struct VideoPipeline {
     pipeline: Option<gstreamer::Pipeline>,
-    video_texture: Option<egui::TextureHandle>,
     latest_frame: Arc<Mutex<Option<VideoFrame>>>,
-    rtsp_url: String,
     is_playing: bool,
+    rtsp_url: String,
     codec: VideoCodec,
-    speed: f32,
-    battery: f32,
-    gps_lat: f64,
-    gps_lon: f64,
 }
 
-impl RemoteDriveApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        gstreamer::init().expect("Failed to initialize GStreamer");
-
-        let latest_frame = Arc::new(Mutex::new(None));
-
+impl VideoPipeline {
+    fn new(default_url: String) -> Self {
         Self {
             pipeline: None,
-            video_texture: None,
-            latest_frame,
-            rtsp_url: "rtsp://121.204.173.162:30554/rtp/TESTRTSP_1".to_string(),
+            latest_frame: Arc::new(Mutex::new(None)),
             is_playing: false,
+            rtsp_url: default_url,
             codec: VideoCodec::H265,
-            speed: 0.0,
-            battery: 85.0,
-            gps_lat: 39.9042,
-            gps_lon: 116.4074,
         }
     }
 
@@ -186,75 +174,150 @@ impl RemoteDriveApp {
     }
 }
 
-impl Drop for RemoteDriveApp {
+impl Drop for VideoPipeline {
     fn drop(&mut self) {
         self.stop_pipeline();
     }
 }
 
+struct RemoteDriveApp {
+    pipelines: [VideoPipeline; NUM_VIDEOS],
+    video_textures: [Option<egui::TextureHandle>; NUM_VIDEOS],
+    speed: f32,
+    battery: f32,
+    gps_lat: f64,
+    gps_lon: f64,
+    global_connected: bool,
+}
+
+impl RemoteDriveApp {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        gstreamer::init().expect("Failed to initialize GStreamer");
+
+        let default_urls = [
+            "rtsp://121.204.173.162:30554/rtp/TESTRTSP_1".to_string(),
+            "rtsp://121.204.173.162:30554/rtp/TESTRTSP_2".to_string(),
+            "rtsp://121.204.173.162:30554/rtp/TESTRTSP_3".to_string(),
+            "rtsp://121.204.173.162:30554/rtp/TESTRTSP_4".to_string(),
+            "rtsp://121.204.173.162:30554/rtp/TESTRTSP_5".to_string(),
+            "rtsp://121.204.173.162:30554/rtp/TESTRTSP_6".to_string(),
+        ];
+
+        let pipelines = [
+            VideoPipeline::new(default_urls[0].clone()),
+            VideoPipeline::new(default_urls[1].clone()),
+            VideoPipeline::new(default_urls[2].clone()),
+            VideoPipeline::new(default_urls[3].clone()),
+            VideoPipeline::new(default_urls[4].clone()),
+            VideoPipeline::new(default_urls[5].clone()),
+        ];
+
+        Self {
+            pipelines,
+            video_textures: Default::default(),
+            speed: 0.0,
+            battery: 85.0,
+            gps_lat: 39.9042,
+            gps_lon: 116.4074,
+            global_connected: false,
+        }
+    }
+
+    fn start_all_pipelines(&mut self, ctx: egui::Context) {
+        for i in 0..NUM_VIDEOS {
+            if let Err(e) = self.pipelines[i].start_pipeline(ctx.clone()) {
+                eprintln!("Failed to start pipeline {}: {}", i, e);
+            }
+        }
+        self.global_connected = true;
+    }
+
+    fn stop_all_pipelines(&mut self) {
+        for i in 0..NUM_VIDEOS {
+            self.pipelines[i].stop_pipeline();
+        }
+        self.global_connected = false;
+    }
+}
+
+impl Drop for RemoteDriveApp {
+    fn drop(&mut self) {
+        self.stop_all_pipelines();
+    }
+}
+
 impl eframe::App for RemoteDriveApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let frame = {
-            let mut latest = self.latest_frame.lock().unwrap();
-            latest.take()
-        };
+        for i in 0..NUM_VIDEOS {
+            let frame = {
+                let mut latest = self.pipelines[i].latest_frame.lock().unwrap();
+                latest.take()
+            };
 
-        if let Some(frame) = frame {
-            let size = [frame.width as usize, frame.height as usize];
-            let color_image = ColorImage::from_rgba_unmultiplied(size, &frame.data);
+            if let Some(frame) = frame {
+                let size = [frame.width as usize, frame.height as usize];
+                let color_image = ColorImage::from_rgba_unmultiplied(size, &frame.data);
 
-            let texture = self.video_texture.get_or_insert_with(|| {
-                ctx.load_texture("video", color_image.clone(), egui::TextureOptions::default())
-            });
+                let texture = self.video_textures[i].get_or_insert_with(|| {
+                    ctx.load_texture(format!("video_{}", i), color_image.clone(), egui::TextureOptions::default())
+                });
 
-            texture.set(color_image, egui::TextureOptions::default());
+                texture.set(color_image, egui::TextureOptions::default());
+            }
         }
 
         egui::SidePanel::right("control_panel")
             .min_width(280.0)
             .show(ctx, |ui| {
-                ui.heading("远程驾驶控制台");
+                ui.heading("Control Panel");
                 ui.separator();
 
                 ui.group(|ui| {
-                    ui.heading("连接");
-                    ui.label("RTSP URL:");
-                    ui.text_edit_singleline(&mut self.rtsp_url);
-
+                    ui.heading("Global Control");
                     ui.horizontal(|ui| {
-                        ui.label("编码:");
-                        ui.radio_value(&mut self.codec, VideoCodec::H264, "H.264");
-                        ui.radio_value(&mut self.codec, VideoCodec::H265, "H.265");
-                    });
-
-                    ui.horizontal(|ui| {
-                        if !self.is_playing {
-                            if ui.button("▶ 连接").clicked() {
-                                if let Err(e) = self.start_pipeline(ctx.clone()) {
-                                    eprintln!("Failed to start pipeline: {}", e);
-                                }
+                        if !self.global_connected {
+                            if ui.button("[Connect] All").clicked() {
+                                self.start_all_pipelines(ctx.clone());
                             }
                         } else {
-                            if ui.button("⏹ 断开").clicked() {
-                                self.stop_pipeline();
+                            if ui.button("[Disconnect] All").clicked() {
+                                self.stop_all_pipelines();
                             }
                         }
-                        ui.label(if self.is_playing { "🟢 连接中" } else { "⚫ 未连接" });
+                        ui.label(if self.global_connected { "[Connected]" } else { "[Disconnected]" });
                     });
                 });
 
                 ui.separator();
 
                 ui.group(|ui| {
-                    ui.heading("车辆状态");
+                    ui.heading("Camera Settings");
+                    for i in 0..NUM_VIDEOS {
+                        ui.collapsing(format!("Camera {}", i + 1), |ui| {
+                            ui.label("RTSP URL:");
+                            ui.text_edit_singleline(&mut self.pipelines[i].rtsp_url);
+
+                            ui.horizontal(|ui| {
+                                ui.label("Codec:");
+                                ui.radio_value(&mut self.pipelines[i].codec, VideoCodec::H264, "H.264");
+                                ui.radio_value(&mut self.pipelines[i].codec, VideoCodec::H265, "H.265");
+                            });
+                        });
+                    }
+                });
+
+                ui.separator();
+
+                ui.group(|ui| {
+                    ui.heading("Vehicle Status");
                     ui.horizontal(|ui| {
-                        ui.label("速度:");
+                        ui.label("Speed:");
                         ui.label(format!("{:.1} km/h", self.speed));
                     });
-                    ui.add(egui::Slider::new(&mut self.speed, 0.0..=120.0).text("速度"));
+                    ui.add(egui::Slider::new(&mut self.speed, 0.0..=120.0).text("Speed"));
 
                     ui.horizontal(|ui| {
-                        ui.label("电量:");
+                        ui.label("Battery:");
                         ui.label(format!("{:.1} %", self.battery));
                     });
                     ui.add(egui::ProgressBar::new(self.battery / 100.0).text(format!("{}%", self.battery)));
@@ -265,11 +328,11 @@ impl eframe::App for RemoteDriveApp {
                 ui.group(|ui| {
                     ui.heading("GPS");
                     ui.horizontal(|ui| {
-                        ui.label("纬度:");
+                        ui.label("Lat:");
                         ui.label(format!("{:.6}", self.gps_lat));
                     });
                     ui.horizontal(|ui| {
-                        ui.label("经度:");
+                        ui.label("Lon:");
                         ui.label(format!("{:.6}", self.gps_lon));
                     });
                 });
@@ -277,73 +340,83 @@ impl eframe::App for RemoteDriveApp {
                 ui.separator();
 
                 ui.group(|ui| {
-                    ui.heading("控制");
+                    ui.heading("Controls");
                     let (w, h) = (100.0, 80.0);
                     ui.vertical_centered(|ui| {
-                        ui.add_sized([w, h], egui::Button::new("↑"));
+                        ui.add_sized([w, h], egui::Button::new("Forward"));
                         ui.horizontal(|ui| {
-                            ui.add_sized([w, h], egui::Button::new("←"));
-                            ui.add_sized([w, h], egui::Button::new("■"));
-                            ui.add_sized([w, h], egui::Button::new("→"));
+                            ui.add_sized([w, h], egui::Button::new("Left"));
+                            ui.add_sized([w, h], egui::Button::new("Stop"));
+                            ui.add_sized([w, h], egui::Button::new("Right"));
                         });
-                        ui.add_sized([w, h], egui::Button::new("↓"));
+                        ui.add_sized([w, h], egui::Button::new("Back"));
                     });
                 });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("视频流");
+            ui.heading("Multi-Video Streams (6 channels)");
             ui.separator();
 
-            if let Some(texture) = &self.video_texture {
-                let available_size = ui.available_size();
-                let texture_size = texture.size_vec2();
-                let scale = (available_size.x / texture_size.x).min(available_size.y / texture_size.y);
-                let display_size = texture_size * scale;
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    egui::Grid::new("video_grid")
+                        .num_columns(2)
+                        .spacing([10.0, 10.0])
+                        .show(ui, |ui| {
+                            for row in 0..3 {
+                                for col in 0..2 {
+                                    let i = row * 2 + col;
+                                    ui.group(|ui| {
+                                        ui.set_min_width(300.0);
 
-                let (rect, _) = ui.allocate_exact_size(display_size, egui::Sense::hover());
-                ui.painter().image(
-                    texture.id(),
-                    rect,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    egui::Color32::WHITE,
-                );
+                                        ui.horizontal(|ui| {
+                                            ui.heading(format!("Camera {}", i + 1));
+                                            ui.label(if self.pipelines[i].is_playing { "[ON]" } else { "[OFF]" });
+                                        });
 
-                let painter = ui.painter_at(rect);
-                painter.rect_filled(
-                    egui::Rect::from_min_size(rect.left_top() + egui::vec2(10.0, 10.0), egui::vec2(200.0, 80.0)),
-                    5.0,
-                    egui::Color32::from_black_alpha(180),
-                );
-                painter.text(
-                    rect.left_top() + egui::vec2(20.0, 30.0),
-                    egui::Align2::LEFT_TOP,
-                    format!("速度: {:.1} km/h", self.speed),
-                    egui::FontId::proportional(16.0),
-                    egui::Color32::WHITE,
-                );
-                painter.text(
-                    rect.left_top() + egui::vec2(20.0, 60.0),
-                    egui::Align2::LEFT_TOP,
-                    format!("电量: {:.1} %", self.battery),
-                    egui::FontId::proportional(16.0),
-                    egui::Color32::WHITE,
-                );
-                painter.circle_filled(
-                    rect.center_top() + egui::vec2(0.0, 30.0),
-                    25.0,
-                    egui::Color32::from_rgb(if self.is_playing { 0 } else { 200 }, 0, 0),
-                );
-                painter.circle_filled(
-                    rect.center_top() + egui::vec2(0.0, 30.0),
-                    20.0,
-                    egui::Color32::from_rgb(if self.is_playing { 200 } else { 0 }, 0, 0),
-                );
-            } else {
-                ui.centered_and_justified(|ui| {
-                    ui.heading("等待视频流...");
+                                        ui.horizontal(|ui| {
+                                            if !self.pipelines[i].is_playing {
+                                                if ui.button("Connect").clicked() {
+                                                    if let Err(e) = self.pipelines[i].start_pipeline(ctx.clone()) {
+                                                        eprintln!("Failed to start pipeline {}: {}", i, e);
+                                                    }
+                                                }
+                                            } else {
+                                                if ui.button("Disconnect").clicked() {
+                                                    self.pipelines[i].stop_pipeline();
+                                                }
+                                            }
+                                        });
+
+                                        ui.separator();
+
+                                        if let Some(texture) = &self.video_textures[i] {
+                                            let texture_size = texture.size_vec2();
+                                            let available_width = ui.available_width().max(280.0);
+                                            let scale = available_width / texture_size.x;
+                                            let display_size = texture_size * scale;
+
+                                            let (rect, _) = ui.allocate_exact_size(display_size, egui::Sense::hover());
+                                            ui.painter().image(
+                                                texture.id(),
+                                                rect,
+                                                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                                egui::Color32::WHITE,
+                                            );
+                                        } else {
+                                            ui.centered_and_justified(|ui| {
+                                                ui.set_min_size(egui::vec2(280.0, 160.0));
+                                                ui.label("Waiting for video...");
+                                            });
+                                        }
+                                    });
+                                }
+                                ui.end_row();
+                            }
+                        });
                 });
-            }
         });
     }
 }
@@ -351,14 +424,14 @@ impl eframe::App for RemoteDriveApp {
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 720.0])
-            .with_min_inner_size([800.0, 600.0])
-            .with_title("远程驾驶客户端"),
+            .with_inner_size([1600.0, 900.0])
+            .with_min_inner_size([1280.0, 720.0])
+            .with_title("Remote Drive Client - Multi Video"),
         ..Default::default()
     };
 
     eframe::run_native(
-        "远程驾驶客户端",
+        "Remote Drive Client - Multi Video",
         native_options,
         Box::new(|cc| Ok(Box::new(RemoteDriveApp::new(cc)))),
     )

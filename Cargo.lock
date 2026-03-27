@@ -1603,6 +1603,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "gstreamer-gl"
+version = "0.23.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c5fe4cfc154d1aef2d5bddaf45c8fcb80af5ae4416795650a01c38e01d6d5bd"
+dependencies = [
+ "glib",
+ "gstreamer",
+ "gstreamer-base",
+ "gstreamer-gl-sys",
+ "gstreamer-video",
+ "libc",
+ "once_cell",
+]
+
+[[package]]
+name = "gstreamer-gl-egl"
+version = "0.23.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8de1f4247cf2d009b41ab5efb03e4d826b7ccaafb9a75d3ea10e68e46f65e8aa"
+dependencies = [
+ "glib",
+ "gstreamer",
+ "gstreamer-gl",
+ "gstreamer-gl-egl-sys",
+ "libc",
+]
+
+[[package]]
+name = "gstreamer-gl-egl-sys"
+version = "0.23.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dda4d852ed107cc48692af4e109e5e4775b6ce1044d13df79f6f431c195096d7"
+dependencies = [
+ "glib-sys",
+ "gstreamer-gl-sys",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
+name = "gstreamer-gl-sys"
+version = "0.23.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a832c21d4522ed5e1b8dfc676a45361969216b144fc03af413a38c471f38bcf7"
+dependencies = [
+ "glib-sys",
+ "gobject-sys",
+ "gstreamer-base-sys",
+ "gstreamer-sys",
+ "gstreamer-video-sys",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
 name = "gstreamer-sys"
 version = "0.23.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2847,6 +2902,8 @@ dependencies = [
  "futures",
  "gstreamer",
  "gstreamer-app",
+ "gstreamer-gl",
+ "gstreamer-gl-egl",
  "gstreamer-video",
  "thiserror 2.0.18",
 ]

@@ -91,6 +91,22 @@ impl VideoPipeline {
             .build()
             .map_err(|e| Error::GStreamer(e.to_string()))?;
 
+        let videorate = gstreamer::ElementFactory::make("videorate")
+            .name("videorate")
+            .build()
+            .map_err(|e| Error::GStreamer(e.to_string()))?;
+
+        let rate_capsfilter = gstreamer::ElementFactory::make("capsfilter")
+            .name("rate_capsfilter")
+            .property(
+                "caps",
+                &gstreamer::Caps::builder("video/x-raw")
+                    .field("framerate", gstreamer::Fraction::new(15, 1))
+                    .build(),
+            )
+            .build()
+            .map_err(|e| Error::GStreamer(e.to_string()))?;
+
         let capsfilter = gstreamer::ElementFactory::make("capsfilter")
             .name("capsfilter")
             .property(
@@ -108,15 +124,16 @@ impl VideoPipeline {
                 .field("format", "RGBA")
                 .build())
             .drop(true)
-            .max_buffers(1)
+            .max_buffers(2)
+            .buffer_list(false)
             .sync(false)
             .wait_on_eos(false)
             .build();
 
-        pipeline.add_many([&rtspsrc, &depay, &parse, &dec, &videoconvert, &capsfilter, appsink.upcast_ref()])
+        pipeline.add_many([&rtspsrc, &depay, &parse, &dec, &videoconvert, &videorate, &rate_capsfilter, &capsfilter, appsink.upcast_ref()])
             .map_err(|e| Error::GStreamer(e.to_string()))?;
 
-        gstreamer::Element::link_many([&depay, &parse, &dec, &videoconvert, &capsfilter, appsink.upcast_ref()])
+        gstreamer::Element::link_many([&depay, &parse, &dec, &videoconvert, &videorate, &rate_capsfilter, &capsfilter, appsink.upcast_ref()])
             .map_err(|e| Error::GStreamer(e.to_string()))?;
 
         let pipeline_weak = pipeline.downgrade();
